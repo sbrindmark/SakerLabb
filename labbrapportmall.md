@@ -2,10 +2,10 @@
 
 *Kunskapskontroll 2, IT-säkerhet för utvecklare. Fyll i mallen och lämna in som PDF tillsammans med länken till ditt repo. Riktlängd två till tre sidor.*
 
-**Namn:**
-**Datum:**
-**Repo (länk till din fork):**
-**Applikation som analyserades:**
+**Namn:** Sebastian
+**Datum:** 2026-09-01
+**Repo (länk till din fork):** https://github.com/sbrindmark/SakerLabb
+**Applikation som analyserades:** SakerLabb Support
 
 ---
 
@@ -77,35 +77,63 @@ Använd mönstret nedan per åtgärdat fynd. Varje åtgärd ska gå att spåra t
 ### Åtgärd 1
 
 ```
-Fynd: 3 - cs/unsafe-deserialization-untrusted-input     (nr och regel-id/alert från tabellen ovan)
-Plats: SakerLabb.Web/Services/ImportService.cs:40      (fil och rad, eller URL)
-Bevis före:  (skärmbild eller rapportutdrag som visar fyndet)
-Bedömning:   (verkligt eller falskt positivt, kort motiverat)
-Åtgärd:      Ta bort TypeNameHandling.All. En rad
-Bevis efter: (ny körning: CodeQL-alerten står som Fixed, eller ZAP-larmet är borta ur den nya rapporten)
+Fynd:        3 – cs/unsafe-deserialization-untrusted-input, alert #15
+Plats:       SakerLabb.Web/Services/ImportService.cs:40
+Bevis före:  proof-3-deserialization.png (alerten står som Open)
+Bedömning:   Verkligt. TypeNameHandling.All lät inkommande JSON välja vilken .NET-typ
+             som instansierades ($type), vilket möjliggör fjärrkörning av kod (RCE).
+Åtgärd:      Bytte TypeNameHandling.All mot TypeNameHandling.None – datan får inte
+             längre bestämma typ. Commit b6982e8.
+Bevis efter: proof-3-deserialization-fixed.png – CodeQL-körning 33539020206
+             (2026-09-01), alert #15 står som Fixed.
 ```
+
+**Före:**
+![Fynd 3 före: deserialisering Open](proof-3-deserialization.png)
+
+**Efter:**
+![Fynd 3 efter: deserialisering Fixed](proof-3-deserialization-fixed.png)
 
 ### Åtgärd 2
 
 ```
-Fynd: 4 - cs/xml/insecure-dtd-handling
-Plats: SakerLabb.Web/Services/ImportService.cs:27
-Bevis före:
-Bedömning:
-Åtgärd: DtdProcessing.Prohibit + XmlResolver = null.
-Bevis efter:
+Fynd:        4 – cs/xml/insecure-dtd-handling, alert #20
+Plats:       SakerLabb.Web/Services/ImportService.cs:27
+Bevis före:  proof-4-dtd.png (alerten står som Open)
+Bedömning:   Verkligt. DTD-tolkning (DtdProcessing.Parse) i kombination med en
+             XmlUrlResolver gör att extern XML kan läsa lokala filer och göra
+             utgående anrop (XXE → filläsning och SSRF).
+Åtgärd:      Satte DtdProcessing.Prohibit och XmlResolver = null på både
+             XmlReaderSettings och XmlDocument. Commit 50b4412.
+Bevis efter: proof-4-dtd-fixed.png – CodeQL-körning 33539020206 (2026-09-01),
+             alert #20 står som Fixed.
 ```
+
+**Före:**
+![Fynd 4 före: DTD/XXE Open](proof-4-dtd.png)
+
+**Efter:**
+![Fynd 4 efter: DTD/XXE Fixed](proof-4-dtd-fixed.png)
 
 ### Åtgärd 3
 
 ```
-Fynd: 1 - cs/web/xss
-Plats: SakerLabb.Web/Components/Pages/Tickets.razor:21
-Bevis före:
-Bedömning:
-Åtgärd: Ta bort MarkupString, skriv @Search.
-Bevis efter:
+Fynd:        1 – cs/web/xss, alert #22
+Plats:       SakerLabb.Web/Components/Pages/Tickets.razor:21
+Bevis före:  proof-1-xss.png (alerten står som Open)
+Bedömning:   Verkligt. MarkupString skrev sökordet som rå HTML, så ett skript i
+             sökparametern kördes i webbläsaren (reflekterad XSS).
+Åtgärd:      Tog bort MarkupString och skriver @Search, som Razor HTML-escapar
+             automatiskt. <strong> behålls som statisk markup. Commit aded7f3.
+Bevis efter: proof-1-xss-fixed.png – CodeQL-körning 33539020206 (2026-09-01),
+             alert #22 står som Fixed.
 ```
+
+**Före:**
+![Fynd 1 före: XSS Open](proof-1-xss.png)
+
+**Efter:**
+![Fynd 1 efter: XSS Fixed](proof-1-xss-fixed.png)
 
 ---
 
@@ -113,4 +141,14 @@ Bevis efter:
 
 Om du valt att inte åtgärda ett fynd, skriv ned tre saker per bortval: risken, motivet och den kompenserande kontrollen. Sätt gärna ett datum för omprövning.
 
-*Skriv här, eller skriv "inga bortval".*
+Jag åtgärdade de tre allvarligaste fynden (1, 3 och 4). Fynd 2 och 5 valde jag att inte åtgärda den här gången. Båda gör andra fel värre men är ingen egen väg in, och XSS-fyndet som gjorde dem farligast är redan fixat.
+
+**Bortval 1 – Fynd 2: cookie utan HttpOnly/Secure**
+- Risk: sessionskakan blir lättare att komma åt, t.ex. via skript eller okrypterad trafik.
+- Motiv: kräver oftast ett annat fel först, och jag prioriterade de tre fynd som ger kodkörning och XSS. Tiden räckte inte till allt.
+- Kompenserande kontroll: XSS är åtgärdat, och appen kördes bara lokalt på localhost i labbmiljön. Det är en liten fix (sätt HttpOnly och Secure till true) som kan tas senare.
+
+**Bortval 2 – Fynd 5: CSP-header saknas**
+- Risk: ett extra skydd mot XSS saknas, så om ett XSS-hål kommer tillbaka finns inget som bromsar det.
+- Motiv: det är inget hål i sig utan ett skyddslager, och själva XSS-fyndet är redan fixat.
+- Kompenserande kontroll: escapingen från Fynd 1 är huvudskyddet mot XSS och den är på plats. En CSP-header kan läggas till senare och verifieras i ZAP.
